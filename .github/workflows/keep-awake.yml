@@ -1,0 +1,16 @@
+# Backup keep-awake: pings the free Render service so it does not go to sleep.
+# GitHub may delay scheduled runs and pauses them after 60 days without repo activity,
+# so also set up UptimeRobot / cron-job.org (see README).
+name: keep-awake
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health/live
+        run: curl -fsS --max-time 60 --retry 3 --retry-delay 10 https://transaction-webhook-api-z6c9.onrender.com/health/live

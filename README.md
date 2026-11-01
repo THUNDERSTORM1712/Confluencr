@@ -4,7 +4,34 @@ A small, reliable backend that **receives payment webhooks, answers immediately,
 
 It was built for the *Full Stack Engineer – Backend* assessment, and is designed so that a transaction is **never lost, never processed twice, and never makes the sender wait**.
 
-> **Try it in your browser:** start the app and open **`/ui`** — send a webhook, then watch it move from `PROCESSING` to `PROCESSED` with a live progress bar.
+> **Try it in your browser:** open **`/ui`** — send a webhook, then watch it move from `PROCESSING` to `PROCESSED` with a live progress bar.
+
+## 🌐 Live deployment
+
+| | |
+|---|---|
+| **Public API** | https://transaction-webhook-api-z6c9.onrender.com |
+| **Web UI** (easiest way to try it) | https://transaction-webhook-api-z6c9.onrender.com/ui |
+| **Health check** `GET /` | https://transaction-webhook-api-z6c9.onrender.com/ |
+| **Readiness** `GET /health/ready` | https://transaction-webhook-api-z6c9.onrender.com/health/ready |
+| **Webhook** `POST /v1/webhooks/transactions` | https://transaction-webhook-api-z6c9.onrender.com/v1/webhooks/transactions |
+| **Transaction status** `GET /v1/transactions/{id}` | https://transaction-webhook-api-z6c9.onrender.com/v1/transactions/txn_abc123def456 |
+
+Hosted on Render (free web service, Singapore) with a Supabase PostgreSQL database (Mumbai). The API and the background worker run in one process here (`RUN_WORKER_IN_API=true`), because Render has no free background-worker plan.
+
+**Test it from your terminal** (the status shows `PROCESSING`, then `PROCESSED` after about 30 seconds):
+
+```bash
+curl -i -X POST https://transaction-webhook-api-z6c9.onrender.com/v1/webhooks/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"transaction_id":"txn_demo_001","source_account":"acc_user_789","destination_account":"acc_merchant_456","amount":1500,"currency":"INR"}'
+
+curl https://transaction-webhook-api-z6c9.onrender.com/v1/transactions/txn_demo_001
+```
+
+Or run the full automated check (~35 seconds): `python scripts/smoke_test.py https://transaction-webhook-api-z6c9.onrender.com`
+
+> **If the very first request is slow:** free Render services go to sleep after ~15 minutes without traffic and need up to ~50 seconds to wake up. A keep-awake monitor pings the service every 5 minutes to prevent this — see [Keeping the free service awake](#keeping-the-free-service-awake).
 
 ---
 
@@ -23,7 +50,7 @@ It was built for the *Full Stack Engineer – Backend* assessment, and is design
 11. [Logging](#logging)
 12. [Testing](#testing)
 13. [Deploying (Supabase + Render)](#deploying-supabase--render)
-14. [Troubleshooting](#troubleshooting)
+14. [Troubleshooting](#troubleshooting) · [Keeping the free service awake](#keeping-the-free-service-awake)
 15. [Design decisions](#design-decisions)
 16. [Limitations and future work](#limitations-and-future-work)
 
@@ -425,7 +452,26 @@ If Flyway reports *"non-empty schema … no schema history table"*, Supabase's `
 
 **Paid — API and worker as separate services:** use `render.yaml` instead (the worker needs a paid plan) and set `DATABASE_URL` on **both** services.
 
-> 💤 **Free-plan sleep:** free web services sleep after ~15 minutes idle and take 30–50 s to wake; nothing is processed while asleep (jobs wait safely in the database). Create a free monitor (UptimeRobot or cron-job.org) that calls `https://<your-service>.onrender.com/health/live` every 5–10 minutes to keep it awake — **do this before sharing the URL**.
+> 💤 **Free-plan sleep:** free web services sleep after ~15 minutes idle and take 30–50 s to wake; nothing is processed while asleep (jobs wait safely in the database). Set up a keep-awake monitor — see [below](#keeping-the-free-service-awake) — **before sharing the URL**.
+
+### Keeping the free service awake
+
+A sleeping service would answer the first request slowly (up to ~50 s), which breaks the "respond within 500 ms" requirement. The fix is to send it a tiny request every 5 minutes so it never goes idle. `GET /health/live` is ideal: it doesn't touch the database.
+
+**Option A — UptimeRobot (recommended, free, ~2 minutes):**
+
+1. Sign up at https://uptimerobot.com and click **+ New monitor** (or *Add New Monitor*).
+2. **Monitor type:** `HTTP(s)`.
+3. **Friendly name:** `Transaction Webhook API`.
+4. **URL:** `https://transaction-webhook-api-z6c9.onrender.com/health/live`
+5. **Monitoring interval:** `5 minutes` (the free plan's minimum).
+6. Click **Create monitor**. The status should turn green ("Up") within a minute.
+
+**Option B — cron-job.org (also free):** create a job with the same URL, schedule *every 5 minutes*, method `GET`.
+
+**Option C — built-in backup:** [`.github/workflows/keep-awake.yml`](.github/workflows/keep-awake.yml) pings the service every 5 minutes from GitHub Actions. GitHub may run scheduled jobs several minutes late and pauses them after 60 days without repository activity, so use it **in addition to** Option A or B, not instead.
+
+Check it works: in the Render dashboard open the service → **Logs**; you should see a request to `/health/live` every few minutes.
 
 ### 4. Verify
 
