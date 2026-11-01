@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transaction Webhook Service</title>
+<style>
+  :root {
+    --bg: #f5f7fb; --card: #ffffff; --text: #1b2433; --muted: #5d6b82; --line: #e3e8f1;
+    --brand: #3b5bdb; --brand-dark: #2f49b3; --brand-soft: #e7ecff;
+    --ok: #12805c; --ok-soft: #dff6ec; --warn: #a15c00; --warn-soft: #fff1d6;
+    --bad: #b42318; --bad-soft: #fde8e6; --info-soft: #e7f1ff;
+    --radius: 14px; --shadow: 0 1px 2px rgba(16,24,40,.05), 0 4px 16px rgba(16,24,40,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1523; --card: #171f33; --text: #e8ecf5; --muted: #9aa8c2; --line: #28324a;
+      --brand: #7c93ff; --brand-dark: #98aaff; --brand-soft: #232d52;
+      --ok: #4ade9f; --ok-soft: #12332a; --warn: #fbbf4a; --warn-soft: #3a2c10;
+      --bad: #ff8a80; --bad-soft: #3d1b19; --info-soft: #1b2a47;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--brand); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -.01em; }
+  .sub { color: var(--muted); margin: 2px 0 0; font-size: 14px; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+          font-size: 13px; font-weight: 600; background: var(--info-soft); color: var(--muted); }
+  .pill .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); } .pill.ok .dot { background: var(--ok); }
+  .pill.bad { background: var(--bad-soft); color: var(--bad); } .pill.bad .dot { background: var(--bad); }
+  nav a { margin-left: 14px; font-size: 14px; text-decoration: none; font-weight: 600; }
+  nav a:hover { text-decoration: underline; }
+  .grid { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); }
+  .grid > * { min-width: 0; }
+  @media (min-width: 900px) { .grid { grid-template-columns: 420px minmax(0, 1fr); align-items: start; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }
+  .card + .card { margin-top: 18px; }
+  h2 { font-size: 16px; margin: 0 0 4px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 5px; }
+  input, select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+                  background: var(--bg); color: var(--text); font: inherit; }
+  input:focus, select:focus, button:focus-visible, summary:focus-visible { outline: 3px solid var(--brand-soft); border-color: var(--brand); }
+  input[aria-invalid="true"] { border-color: var(--bad); }
+  .err { color: var(--bad); font-size: 12.5px; min-height: 18px; margin-top: 3px; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 10px; }
+  .idrow { display: flex; gap: 8px; } .idrow input { flex: 1; min-width: 0; } .idrow button { flex-shrink: 0; }
+  button { font: inherit; font-weight: 600; border-radius: 10px; border: 1px solid transparent; padding: 10px 14px; cursor: pointer; }
+  button.primary { background: var(--brand); color: #fff; width: 100%; margin-top: 16px; }
+  button.primary:hover { background: var(--brand-dark); }
+  button.ghost { background: transparent; border-color: var(--line); color: var(--text); }
+  button.ghost:hover { background: var(--brand-soft); }
+  button.small { padding: 7px 10px; font-size: 13px; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .actions .ghost { flex: 1; }
+  .result { margin-top: 16px; border-radius: 12px; padding: 14px 16px; display: none; }
+  .result.show { display: block; }
+  .result.ok { background: var(--ok-soft); } .result.warn { background: var(--warn-soft); } .result.bad { background: var(--bad-soft); }
+  .result strong { display: block; margin-bottom: 2px; }
+  .result p { margin: 2px 0 0; color: var(--text); }
+  details { margin-top: 8px; font-size: 13px; } summary { cursor: pointer; color: var(--muted); }
+  pre { margin: 8px 0 0; padding: 10px; border-radius: 8px; background: var(--card); border: 1px solid var(--line);
+        overflow: auto; font-size: 12.5px; max-height: 220px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 4px; }
+  .toolbar input { flex: 1; min-width: 180px; }
+  .empty { text-align: center; color: var(--muted); padding: 28px 8px; border: 1px dashed var(--line); border-radius: 12px; margin-top: 12px; }
+  ul { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
+  li.txn { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .txn-top { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .txn-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px; font-weight: 600; word-break: break-all; }
+  .badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+  .badge.PROCESSING { background: var(--warn-soft); color: var(--warn); }
+  .badge.PROCESSED { background: var(--ok-soft); color: var(--ok); }
+  .badge.FAILED, .badge.NOTFOUND { background: var(--bad-soft); color: var(--bad); }
+  .meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .bar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 10px; }
+  .bar > div { height: 100%; width: 0; background: var(--brand); border-radius: 99px; transition: width .6s linear; }
+  .bar.done > div { background: var(--ok); }
+  .steps { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+  .steps li { margin: 4px 0; }
+  footer { margin-top: 28px; color: var(--muted); font-size: 13px; text-align: center; }
+  .sr { position: absolute; left: -9999px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Transaction Webhook Service</h1>
+      <p class="sub">Send a test webhook and watch it get processed in the background.</p>
+    </div>
+    <div>
+      <span id="health" class="pill" role="status"><span class="dot"></span><span id="healthText">Checking service…</span></span>
+      <nav style="display:inline-block"><a href="/docs">API docs</a><a href="/health/ready">Health</a></nav>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section>
+      <div class="card">
+        <h2>1. Send a webhook</h2>
+        <p class="hint">This does exactly what a payment provider (like Razorpay) would do.</p>
+        <form id="form" novalidate>
+          <label for="transaction_id">Transaction ID</label>
+          <div class="idrow">
+            <input id="transaction_id" autocomplete="off" spellcheck="false" aria-describedby="e_transaction_id">
+            <button type="button" class="ghost small" id="newId" title="Generate a new unique ID">New ID</button>
+          </div>
+          <div class="err" id="e_transaction_id"></div>
+
+          <label for="source_account">From account</label>
+          <input id="source_account" value="acc_user_789" autocomplete="off">
+          <div class="err" id="e_source_account"></div>
+
+          <label for="destination_account">To account</label>
+          <input id="destination_account" value="acc_merchant_456" autocomplete="off">
+          <div class="err" id="e_destination_account"></div>
+
+          <div class="row">
+            <div>
+              <label for="amount">Amount</label>
+              <input id="amount" value="1500" inputmode="decimal" autocomplete="off">
+              <div class="err" id="e_amount"></div>
+            </div>
+            <div>
+              <label for="currency">Currency</label>
+              <select id="currency"></select>
+            </div>
+          </div>
+
+          <button class="primary" type="submit" id="send">Send webhook</button>
+          <div class="actions">
+            <button type="button" class="ghost" id="again" disabled title="Send the exact same webhook once more">Send again (duplicate test)</button>
+          </div>
+        </form>
+
+        <div id="result" class="result" role="status" aria-live="polite"></div>
+      </div>
+
+      <div class="card">
+        <h2>How it works</h2>
+        <ol class="steps">
+          <li>The webhook is <b>saved to the database</b> first, then the service answers <b>202 Accepted</b> straight away.</li>
+          <li>A background worker picks it up and simulates the payment work for <b>30 seconds</b>.</li>
+          <li>The status flips from <b>PROCESSING</b> to <b>PROCESSED</b>.</li>
+          <li>Sending the <b>same transaction ID</b> again never creates a second transaction.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2. Track transactions</h2>
+      <p class="hint">Updates automatically every 2 seconds while something is processing.</p>
+      <form id="lookup" class="toolbar">
+        <label class="sr" for="lookupId">Look up a transaction by ID</label>
+        <input id="lookupId" placeholder="Look up any transaction by ID" autocomplete="off" spellcheck="false">
+        <button class="ghost" type="submit">Look up</button>
+        <button class="ghost" type="button" id="clear" title="Remove all from this list (data stays in the database)">Clear list</button>
+      </form>
+      <div id="empty" class="empty">Nothing here yet. Send a webhook on the left and it will appear here.</div>
+      <ul id="list" aria-live="polite"></ul>
+    </section>
+  </div>
+
+  <footer>Tip: open the <a href="/docs">interactive API docs</a> to try every endpoint.</footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var PROCESSING_SECONDS = 30; // matches the service's configured delay; only used to draw the progress bar
+  var CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "SGD", "JPY", "AUD", "CAD"];
+  var $ = function (id) { return document.getElementById(id); };
+  var tracked = [];      // [{id, data|null, notFound}]
+  var lastBody = null;   // the last body sent, for the "send again" button
+  var pollTimer = null;
+
+  // ---- storage (can be unavailable in private windows: never let it break the page) ----
+  function load() { try { return JSON.parse(localStorage.getItem("txn-ui") || "[]"); } catch (e) { return []; } }
+  function save() { try { localStorage.setItem("txn-ui", JSON.stringify(tracked.map(function (t) { return t.id; }))); } catch (e) {} }
+
+  // ---- helpers ----
+  function newId() { return "txn_" + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4); }
+  function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
+  function fmtAmount(a, cur) { try { return new Intl.NumberFormat(undefined, { style: "currency", currency: cur }).format(a); } catch (e) { return a + " " + cur; } }
+
+  // ---- health pill ----
+  function checkHealth() {
+    fetch("/health/ready").then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (x) {
+        $("health").className = "pill " + (x.ok ? "ok" : "bad");
+        $("healthText").textContent = x.ok ? "Service ready" : "Service not ready";
+      }).catch(function () { $("health").className = "pill bad"; $("healthText").textContent = "Cannot reach service"; });
+  }
+
+  // ---- form ----
+  function fields() { return ["transaction_id", "source_account", "destination_account", "amount"]; }
+  function clearErrors() { fields().forEach(function (f) { $("e_" + f).textContent = ""; $(f).removeAttribute("aria-invalid"); }); }
+  function setError(f, msg) { $("e_" + f).textContent = msg; $(f).setAttribute("aria-invalid", "true"); }
+
+  function validate() {
+    clearErrors();
+    var ok = true;
+    var id = $("transaction_id").value;
+    if (!/^[A-Za-z0-9_\-.:]{1,128}$/.test(id)) { setError("transaction_id", "Use 1-128 letters, numbers and _ - . : (no spaces)."); ok = false; }
+    if (!$("source_account").value.trim()) { setError("source_account", "Required."); ok = false; }
+    if (!$("destination_account").value.trim()) { setError("destination_account", "Required."); ok = false; }
+    var amt = $("amount").value.trim();
+    if (!/^\d{1,16}(\.\d{1,2})?$/.test(amt) || !(parseFloat(amt) > 0)) { setError("amount", "A positive number with up to 2 decimals."); ok = false; }
+    return ok;
+  }
+
+  // The amount is placed into the JSON as typed, so decimals are never rounded by JavaScript floats.
+  function buildBody() {
+    return '{"transaction_id":' + JSON.stringify($("transaction_id").value) +
+      ',"source_account":' + JSON.stringify($("source_account").value.trim()) +
+      ',"destination_account":' + JSON.stringify($("destination_account").value.trim()) +
+      ',"amount":' + $("amount").value.trim() +
+      ',"currency":' + JSON.stringify($("currency").value) + "}";
+  }
+
+  function showResult(kind, title, message, details) {
+    var box = $("result");
+    box.className = "result show " + kind;
+    box.textContent = "";
+    box.appendChild(el("strong", "", title));
+    box.appendChild(el("p", "", message));
+    if (details) {
+      var d = el("details"); d.appendChild(el("summary", "", "Technical details"));
+      d.appendChild(el("pre", "", details)); box.appendChild(d);
+    }
+  }
+
+  var FRIENDLY = {
+    400: "The request was not valid JSON. Check for typos such as a stray letter inside a number.",
+    401: "The signature check failed. This server requires signed webhooks.",
+    413: "The request body is too large.",
+    422: "One of the values was rejected. Check the amount, currency and IDs.",
+    503: "The database is not reachable right now. Nothing was saved - it is safe to try again."
+  };
+
+  function send(body) {
+    var started = performance.now();
+    $("send").disabled = true; $("again").disabled = true;
+    fetch("/v1/webhooks/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: body })
+      .then(function (r) { return r.text().then(function (t) { return { status: r.status, text: t }; }); })
+      .then(function (r) {
+        var ms = Math.round(performance.now() - started), j = null;
+        try { j = JSON.parse(r.text); } catch (e) {}
+        if (r.status === 202 && j) {
+          lastBody = body;
+          if (j.duplicate) {
+            showResult("warn", "Already received (duplicate)",
+              "This transaction ID was seen before, so nothing new was created. Current status: " + j.transaction_status + ". (" + ms + " ms)",
+              JSON.stringify(j, null, 2));
+          } else {
+            showResult("ok", "Accepted (202)", "Saved and queued in " + ms + " ms. Processing takes about 30 seconds - watch it on the right.",
+              JSON.stringify(j, null, 2));
+          }
+          addTracked(j.transaction_id);
+        } else {
+          var detail = j && j.error ? (j.error.message + (j.error.details ? "\n" + JSON.stringify(j.error.details, null, 2) : "")) : r.text;
+          showResult("bad", "Rejected (" + r.status + ")", FRIENDLY[r.status] || "Something went wrong.", detail);
+        }
+      })
+      .catch(function () { showResult("bad", "Could not reach the service", "Check your connection and that the server is running."); })
+      .then(function () { $("send").disabled = false; $("again").disabled = !lastBody; });
+  }
+
+  // ---- tracking ----
+  function addTracked(id) {
+    if (!tracked.some(function (t) { return t.id === id; })) { tracked.unshift({ id: id, data: null, notFound: false }); save(); }
+    render(); refresh();
+  }
+
+  function refresh() {
+    var pending = tracked.filter(function (t) { return !t.notFound && (!t.data || t.data.status === "PROCESSING"); });
+    return Promise.all(pending.map(function (t) {
+      return fetch("/v1/transactions/" + encodeURIComponent(t.id)).then(function (r) {
+        if (r.status === 404) { t.notFound = true; return; }
+        return r.json().then(function (j) { t.notFound = false; t.data = j[0]; });
+      }).catch(function () {});
+    })).then(function () {
+      render();
+      var stillGoing = tracked.some(function (t) { return t.data && t.data.status === "PROCESSING"; });
+      if (stillGoing && !pollTimer) { pollTimer = setInterval(refresh, 2000); }
+      if (!stillGoing && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    });
+  }
+
+  function render() {
+    var list = $("list"); list.textContent = "";
+    $("empty").style.display = tracked.length ? "none" : "block";
+    tracked.forEach(function (t) {
+      var li = el("li", "txn"), d = t.data;
+      var status = t.notFound ? "NOTFOUND" : (d ? d.status : "PROCESSING");
+      var top = el("div", "txn-top");
+      top.appendChild(el("span", "txn-id", t.id));
+      top.appendChild(el("span", "badge " + status, t.notFound ? "NOT FOUND" : status));
+      li.appendChild(top);
+      if (d) {
+        li.appendChild(el("div", "meta", fmtAmount(d.amount, d.currency) + "  ·  " + d.source_account + " → " + d.destination_account));
+        var elapsed = Math.max(0, (Date.now() - Date.parse(d.created_at)) / 1000);
+        if (d.status === "PROCESSED") {
+          var took = (Date.parse(d.processed_at) - Date.parse(d.created_at)) / 1000;
+          li.appendChild(el("div", "meta", "Processed in " + took.toFixed(1) + " s"));
+          var done = el("div", "bar done"); done.appendChild(el("div")); done.firstChild.style.width = "100%"; li.appendChild(done);
+        } else if (d.status === "PROCESSING") {
+          li.appendChild(el("div", "meta", "Processing… " + Math.min(elapsed, PROCESSING_SECONDS).toFixed(0) + " / " + PROCESSING_SECONDS + " s"));
+          var bar = el("div", "bar"); bar.appendChild(el("div"));
+          bar.firstChild.style.width = Math.min(95, (elapsed / PROCESSING_SECONDS) * 100) + "%"; li.appendChild(bar);
+        } else {
+          li.appendChild(el("div", "meta", "Processing failed after all retries."));
+        }
+      } else if (t.notFound) {
+        li.appendChild(el("div", "meta", "No transaction with this ID exists."));
+      } else {
+        li.appendChild(el("div", "meta", "Loading…"));
+      }
+      list.appendChild(li);
+    });
+  }
+
+  // ---- wire up ----
+  CURRENCIES.forEach(function (c) { var o = el("option", "", c); o.value = c; $("currency").appendChild(o); });
+  $("transaction_id").value = newId();
+  $("newId").addEventListener("click", function () { $("transaction_id").value = newId(); $("transaction_id").focus(); });
+  $("form").addEventListener("submit", function (e) { e.preventDefault(); if (validate()) { send(buildBody()); } });
+  $("again").addEventListener("click", function () { if (lastBody) { send(lastBody); } });
+  $("lookup").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var id = $("lookupId").value.trim();
+    if (id) { var existing = tracked.filter(function (t) { return t.id === id; })[0]; if (existing) { existing.data = null; existing.notFound = false; } addTracked(id); $("lookupId").value = ""; }
+  });
+  $("clear").addEventListener("click", function () { tracked = []; save(); render(); });
+
+  tracked = load().map(function (id) { return { id: id, data: null, notFound: false }; });
+  render(); refresh(); checkHealth(); setInterval(checkHealth, 15000);
+  setInterval(function () { if (tracked.some(function (t) { return t.data && t.data.status === "PROCESSING"; })) { render(); } }, 1000);
+})();
+</script>
+</body>
+</html>

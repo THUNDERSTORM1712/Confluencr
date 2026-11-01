@@ -1,0 +1,50 @@
+# Local development / test stack. Production uses Supabase PostgreSQL (no database container).
+#
+#   docker compose --profile local-db up -d postgres        # throwaway local PostgreSQL (tests, dev)
+#   docker compose run --rm flyway                          # flyway validate + migrate
+#   docker compose up --build api worker                    # API on :8000 and the worker
+#
+# Point DATABASE_URL (in .env) at Supabase, or at the local container
+# (postgresql://postgres:postgres@postgres:5432/webhooks, DATABASE_SSL_MODE=disable).
+services:
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["local-db"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: webhooks_test
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d webhooks_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  flyway:
+    image: flyway/flyway:10
+    profiles: ["migrate"]
+    env_file: .env
+    environment:
+      # Flyway needs a JDBC URL and a direct/session-pooled connection (never the transaction pooler).
+      FLYWAY_URL: ${FLYWAY_URL:?set FLYWAY_URL in .env}
+      FLYWAY_USER: ${FLYWAY_USER:-postgres}
+      FLYWAY_PASSWORD: ${FLYWAY_PASSWORD:?set FLYWAY_PASSWORD in .env}
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+    volumes:
+      - ./database/migrations:/flyway/sql:ro
+    command: ["-connectRetries=10", "-ignoreMigrationPatterns=*:pending", "validate", "migrate", "info"]
+
+  api:
+    build: .
+    env_file: .env
+    ports:
+      - "8000:8000"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  worker:
+    build: .
+    env_file: .env
+    command: ["python", "-m", "app.workers.transaction_worker"]
+    stop_grace_period: 35s

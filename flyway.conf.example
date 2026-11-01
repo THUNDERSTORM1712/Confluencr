@@ -1,0 +1,10 @@
+# Copy to flyway.conf (git-ignored) or pass the same values as FLYWAY_* environment variables.
+flyway.url=jdbc:postgresql://<host>:5432/postgres?sslmode=require
+flyway.user=<user>
+flyway.password=<password>
+flyway.locations=filesystem:database/migrations
+flyway.connectRetries=10
+# validateOnMigrate is true by default: checksum mismatches abort the migration. Never run `flyway repair`
+# silently; see README "Recovery and rollback".
+flyway.validateOnMigrate=true
+flyway.cleanDisabled=true

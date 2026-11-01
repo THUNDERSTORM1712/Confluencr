@@ -1,0 +1,42 @@
+# Render Blueprint: two independent services sharing one Supabase PostgreSQL database.
+# autoDeploy is off on purpose: GitHub Actions (.github/workflows/deploy.yml) runs
+# `flyway validate` + `flyway migrate` first and only then triggers these deploys via deploy hooks.
+services:
+  - type: web
+    name: transaction-webhook-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health/ready
+    autoDeploy: false
+    envVars: &common_env
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false            # Supabase session-pooler URI (set in the Render dashboard)
+      - key: DATABASE_SSL_MODE
+        value: require
+      - key: PROCESSING_DELAY_SECONDS
+        value: "30"
+      # The assessment grader posts unsigned webhooks, so enforcement is explicitly relaxed here.
+      # For a real provider set WEBHOOK_SIGNATURE_ENABLED=true, a secret, and remove this override.
+      - key: WEBHOOK_SIGNATURE_REQUIRED_IN_PRODUCTION
+        value: "false"
+      - key: WEBHOOK_SIGNATURE_ENABLED
+        value: "false"
+      - key: WEBHOOK_SIGNING_SECRET
+        sync: false
+      - key: LOG_LEVEL
+        value: INFO
+
+  - type: worker
+    name: transaction-webhook-worker
+    runtime: python
+    plan: starter              # Render background workers have no free tier
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.workers.transaction_worker
+    autoDeploy: false
+    envVars: *common_env

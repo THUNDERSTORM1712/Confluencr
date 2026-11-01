@@ -1,0 +1,66 @@
+# Controlled deployment: tests -> flyway validate -> flyway migrate -> deploy API -> deploy worker -> smoke test.
+# Required GitHub secrets: FLYWAY_URL, FLYWAY_USER, FLYWAY_PASSWORD (direct or session-pooled JDBC, never the
+# transaction pooler), RENDER_API_DEPLOY_HOOK, RENDER_WORKER_DEPLOY_HOOK, PUBLIC_API_URL.
+name: ci-cd
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Serialises runs so two deployments can never execute conflicting migrations.
+concurrency:
+  group: database-migrations
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: webhooks_test }
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q tests
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      FLYWAY_URL: ${{ secrets.FLYWAY_URL }}
+      FLYWAY_USER: ${{ secrets.FLYWAY_USER }}
+      FLYWAY_PASSWORD: ${{ secrets.FLYWAY_PASSWORD }}
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+    steps:
+      - uses: actions/checkout@v4
+      - name: Flyway validate
+        run: |
+          docker run --rm -e FLYWAY_URL -e FLYWAY_USER -e FLYWAY_PASSWORD -e FLYWAY_LOCATIONS \
+            -v "$PWD/database/migrations:/flyway/sql:ro" flyway/flyway:10 \
+            -connectRetries=5 -ignoreMigrationPatterns='*:pending' validate
+      - name: Flyway migrate
+        run: |
+          docker run --rm -e FLYWAY_URL -e FLYWAY_USER -e FLYWAY_PASSWORD -e FLYWAY_LOCATIONS \
+            -v "$PWD/database/migrations:/flyway/sql:ro" flyway/flyway:10 migrate
+      - name: Flyway info (verify)
+        run: |
+          docker run --rm -e FLYWAY_URL -e FLYWAY_USER -e FLYWAY_PASSWORD -e FLYWAY_LOCATIONS \
+            -v "$PWD/database/migrations:/flyway/sql:ro" flyway/flyway:10 validate info
+      - name: Deploy API
+        run: curl -fsS -X POST "${{ secrets.RENDER_API_DEPLOY_HOOK }}"
+      - name: Deploy worker
+        run: curl -fsS -X POST "${{ secrets.RENDER_WORKER_DEPLOY_HOOK }}"
+      - name: Wait for readiness and run end-to-end smoke test
+        run: |
+          for i in $(seq 1 60); do
+            curl -fsS "${{ secrets.PUBLIC_API_URL }}/health/ready" && break || sleep 10
+          done
+          python scripts/smoke_test.py "${{ secrets.PUBLIC_API_URL }}"

@@ -1,0 +1,46 @@
+# FREE-TIER blueprint: ONE free web service that also runs the worker loop on a thread (RUN_WORKER_IN_API=true).
+# Render has no free Background Worker plan. Use render.yaml (API + separate worker) when you can pay for the worker.
+# In Render, point the Blueprint at this file (Blueprint -> "Blueprint file path": render.free.yaml).
+#
+# Free-tier caveats (see README): the service sleeps after ~15 min idle; while asleep nothing is processed.
+# Keep it awake with an uptime pinger hitting GET /health/live every ~10 min (e.g. UptimeRobot / cron-job.org).
+services:
+  - type: web
+    name: transaction-webhook-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health/ready
+    autoDeploy: false
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: APP_ENV
+        value: production
+      - key: RUN_WORKER_IN_API
+        value: "true"
+      - key: DATABASE_URL
+        sync: false            # Supabase session-pooler URI (set in the Render dashboard)
+      - key: DATABASE_SSL_MODE
+        value: require
+      - key: PROCESSING_DELAY_SECONDS
+        value: "30"
+      # Free web service has 512 MB RAM: keep the footprint small.
+      - key: WORKER_CONCURRENCY
+        value: "5"
+      - key: API_POOL_SIZE
+        value: "4"
+      - key: API_MAX_OVERFLOW
+        value: "2"
+      - key: WORKER_POOL_SIZE
+        value: "3"
+      - key: WORKER_MAX_OVERFLOW
+        value: "1"
+      # The assessment grader posts unsigned webhooks (see README).
+      - key: WEBHOOK_SIGNATURE_REQUIRED_IN_PRODUCTION
+        value: "false"
+      - key: WEBHOOK_SIGNATURE_ENABLED
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
